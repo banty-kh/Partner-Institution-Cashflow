@@ -5,7 +5,7 @@ An interactive, premium Streamlit dashboard for monitoring partner institution b
 ## 🚀 Key Features
 
 *   **Live Google Sheet Sync:** Reads the latest data directly from the online spreadsheet at runtime with an **Offline Fallback** to a local Excel file if internet connectivity is unavailable. Includes a **Sync to Local Disk** utility to update the local backup cache.
-*   **Context-Propagating Aggregation Pipeline:** Resolves multi-row school approvals and demographic breakdowns correctly (aggregating unique student counts to **7,270** and total budgets to **₹4,20,01,600** without doubling).
+*   **Context-Propagating Aggregation Pipeline:** Resolves multi-row school approvals and demographic breakdowns correctly
 *   **Dynamic Pivot Builder:** Allows users to dynamically configure pivot rows, columns, metrics, and aggregation functions (sum, mean, count) to slice and dice datasets, accompanied by automatic data-labeled Plotly bar charts.
 *   **Institution Factsheet Explorer:** View individual institution details, payout cycles, and category-specific remaining balances.
 *   **Interactive Master Registry:** Built on `streamlit-aggrid` with column sorting, resizing, pagination, and advanced conditional formatting rules (highlighting high budgets in blue, high balances in red, and large cohorts in green).
@@ -31,12 +31,6 @@ An interactive, premium Streamlit dashboard for monitoring partner institution b
     ```bash
     streamlit run app.py
     ```
-
-## 🌐 Streamlit Cloud Deployment
-
-1.  Push the project directory (including `app.py`, `requirements.txt`, `README.md`, `LICENSE`, and the `.xlsx` data file) to a new GitHub repository.
-2.  Log in to [Streamlit Community Cloud](https://share.streamlit.io/).
-3.  Click **New app**, select your repository and branch, configure the Main file path to `app.py`, and click **Deploy!**
 
 ## 📄 License
 
