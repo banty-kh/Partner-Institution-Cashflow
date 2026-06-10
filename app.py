@@ -773,8 +773,9 @@ def load_data_from_source(source):
 import os
 import datetime
 
-# Google Sheet Export Link
-google_sheets_url = "https://docs.google.com/spreadsheets/d/1nYUoPkf22OoGvJ6PkKZAlv0_1T7ZwrtyUIIMq53WTnI/export?format=xlsx"
+# Google Sheet Link
+google_sheet_link = "https://docs.google.com/spreadsheets/d/1nYUoPkf22OoGvJ6PkKZAlv0_1T7ZwrtyUIIMq53WTnI/edit?usp=drive_link"
+google_sheets_url = google_sheet_link.replace("/edit?usp=drive_link", "/export?format=xlsx")
 
 # Local file path for offline sync
 LOCAL_FILE_PATH = os.path.join(os.path.dirname(__file__), "Partner Institution Cashflow_FY 2026-2027.xlsx")
