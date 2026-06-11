@@ -272,6 +272,40 @@ def format_inr(val):
         return f"-₹{formatted_int}"
     return f"₹{formatted_int}"
 
+
+def render_fit_table(df, height=None):
+    """Render compact read-only tables with wrapped, visible columns."""
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_default_column(
+        resizable=True,
+        sortable=False,
+        filterable=False,
+        wrapText=True,
+        autoHeight=True,
+        wrapHeaderText=True,
+        autoHeaderHeight=True,
+        minWidth=110,
+    )
+    gb.configure_grid_options(
+        domLayout="autoHeight",
+        autoSizeStrategy={"type": "fitGridWidth", "defaultMinWidth": 110},
+        suppressHorizontalScroll=True,
+    )
+
+    AgGrid(
+        df,
+        gridOptions=gb.build(),
+        height=height or max(120, min(420, 48 + (len(df) + 1) * 42)),
+        theme="alpine",
+        enable_enterprise_modules=False,
+        allow_unsafe_jscode=True,
+        reload_data=True,
+        custom_css={
+            ".ag-header-cell-label": {"white-space": "normal", "line-height": "1.2"},
+            ".ag-cell": {"line-height": "1.35", "display": "flex", "align-items": "center"},
+        },
+    )
+
 # POC name cleanup (mapping Anjali to Barla)
 def clean_poc_name(val):
     if pd.isna(val) or str(val).strip() == '':
@@ -1172,13 +1206,15 @@ with tab1:
                     'Installment': f"{inst_num}st" if inst_num == 1 else (f"{inst_num}nd" if inst_num == 2 else (f"{inst_num}rd" if inst_num == 3 else f"{inst_num}th")),
                     'Payment Date': str(date_val).split(' ')[0],
                     'Reference No': ref_val,
-                    'Approved Budget': format_inr(row['Sanc_Total'])
+                    'Approved Budget': format_inr(row['Sanc_Total']),
+                    'Unpaid Balance': format_inr(row['Balance_To_Be_Paid'])
                 })
 
     st.markdown("#### 💳 Installment Transaction Log")
     if all_inst_records:
         df_inst_rec = pd.DataFrame(all_inst_records)
-        st.dataframe(df_inst_rec, use_container_width=True)
+        df_inst_rec.insert(0, 'Sl No', range(1, len(df_inst_rec) + 1))
+        render_fit_table(df_inst_rec)
     else:
         st.info("No installment transaction dates are currently logged in columns 64-73 of the Google Sheet. Transactions and their payment dates will appear here automatically once recorded.")
         
@@ -1274,7 +1310,7 @@ with tab2:
             ]
         }
         df_demo = pd.DataFrame(demo_data)
-        st.dataframe(df_demo, hide_index=True, use_container_width=True)
+        render_fit_table(df_demo)
         
         # Payment Cycle timeline in Left Column (HTML formatting flattened to prevent markdown code block treatment)
         st.markdown("#### Payout Cycle & Installment Timeline")
@@ -1362,7 +1398,7 @@ with tab2:
             ]
         }
         df_budget = pd.DataFrame(budget_data)
-        st.dataframe(df_budget, hide_index=True, use_container_width=True)
+        render_fit_table(df_budget)
         
     st.markdown("#### Itemized Cashflow & Disbursement Milestones")
     df_cf_school = df_cf_filtered[df_cf_filtered['Institution'] == selected_school].copy()
@@ -1392,7 +1428,7 @@ with tab2:
         df_cf_show['Approved Amount (INR)'] = df_cf_show['Approved Amount (INR)'].map(format_inr)
         df_cf_show['Disbursed Amount (INR)'] = df_cf_show['Disbursed Amount (INR)'].map(format_inr)
         df_cf_show['Remaining Balance (INR)'] = df_cf_show['Remaining Balance (INR)'].map(format_inr)
-        st.dataframe(df_cf_show, hide_index=True, use_container_width=True)
+        render_fit_table(df_cf_show)
         
         st.markdown("#### Monthly Payout Timeline breakdown (INR)")
         monthly_sched_cols = [f"{m}_Total" for m in months_names]
@@ -1403,7 +1439,7 @@ with tab2:
             df_monthly_sched[col] = pd.to_numeric(df_monthly_sched[col], errors='coerce').fillna(0.0)
             df_monthly_sched[col] = df_monthly_sched[col].map(format_inr)
             
-        st.dataframe(df_monthly_sched, hide_index=True, use_container_width=True)
+        render_fit_table(df_monthly_sched)
     else:
         st.info("No itemized expense head disbursements found in the Cashflow logs for this school.")
 
