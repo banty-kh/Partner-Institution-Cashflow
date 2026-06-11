@@ -272,6 +272,40 @@ def format_inr(val):
         return f"-₹{formatted_int}"
     return f"₹{formatted_int}"
 
+
+def render_fit_table(df, height=None):
+    """Render compact read-only tables with wrapped, visible columns."""
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_default_column(
+        resizable=True,
+        sortable=False,
+        filterable=False,
+        wrapText=True,
+        autoHeight=True,
+        wrapHeaderText=True,
+        autoHeaderHeight=True,
+        minWidth=110,
+    )
+    gb.configure_grid_options(
+        domLayout="autoHeight",
+        autoSizeStrategy={"type": "fitGridWidth", "defaultMinWidth": 110},
+        suppressHorizontalScroll=True,
+    )
+
+    AgGrid(
+        df,
+        gridOptions=gb.build(),
+        height=height or max(120, min(420, 48 + (len(df) + 1) * 42)),
+        theme="alpine",
+        enable_enterprise_modules=False,
+        allow_unsafe_jscode=True,
+        reload_data=True,
+        custom_css={
+            ".ag-header-cell-label": {"white-space": "normal", "line-height": "1.2"},
+            ".ag-cell": {"line-height": "1.35", "display": "flex", "align-items": "center"},
+        },
+    )
+
 # POC name cleanup (mapping Anjali to Barla)
 def clean_poc_name(val):
     if pd.isna(val) or str(val).strip() == '':
@@ -412,7 +446,10 @@ def load_data_from_source(source):
         hostel = parse_num(row.iloc[53])
         nutrition = parse_num(row.iloc[58])
         salary = parse_num(row.iloc[63])
-        total = parse_num(row.iloc[65])
+        sheet_total = parse_num(row.iloc[65])
+        total = tuition + hostel + nutrition + salary
+        if total == 0 and sheet_total > 0:
+            total = sheet_total
 
         # Parse detailed columns
         tuition_stud = parse_num(row.iloc[45])
@@ -438,9 +475,11 @@ def load_data_from_source(source):
                 is_summary = True
                 break
 
-        # Check running sum grand total row detection
+        # Check running sum grand total row detection against the sheet-level Total Amount cell.
+        # Row-level sanctioned totals are intentionally calculated from each expense head's
+        # sanctioned Total Amount column so multi-row approvals are aggregated accurately.
         if not is_main and running_total_sanc > 0:
-            if abs(total - running_total_sanc) < 1.0 and total > 100000.0:
+            if abs(sheet_total - running_total_sanc) < 1.0 and sheet_total > 100000.0:
                 is_summary = True
                 current_school_orig = None
                 current_institution = None
@@ -631,6 +670,35 @@ def load_data_from_source(source):
     df_cf_cleaned['Institution'] = df_cf_cleaned['Institution'].apply(standardize_name)
     df_cf_cleaned = df_cf_cleaned[df_cf_cleaned['Institution'] != "FILTER_OUT_SUMMARY_ROW"].copy()
 
+    # Align cashflow approved amounts with the sanctioned Total Amount columns
+    # from the Amount sheet for each respective expense head. The Cashflow
+    # sheet's `Total approved` column can repeat an institution-level total on
+    # every itemized row, so replacing it here keeps cashflow exports and
+    # remaining-balance calculations category-specific.
+    sanctioned_totals_by_head = df_amt_cleaned.groupby('Institution').agg({
+        'Sanc_Tuition': 'sum',
+        'Sanc_Hostel': 'sum',
+        'Sanc_Nutrition': 'sum',
+        'Sanc_Salary': 'sum'
+    }).to_dict('index')
+
+    def get_sanctioned_total_for_expense(row):
+        head = str(row.get('Expense head', '')).strip().lower()
+        inst_totals = sanctioned_totals_by_head.get(row.get('Institution'), {})
+
+        if 'tuition' in head or 'admission' in head:
+            return inst_totals.get('Sanc_Tuition', 0.0)
+        if 'hostel' in head:
+            return inst_totals.get('Sanc_Hostel', 0.0)
+        if 'nutrition' in head:
+            return inst_totals.get('Sanc_Nutrition', 0.0)
+        if 'salary' in head or 'teacher' in head or 'founder' in head:
+            return inst_totals.get('Sanc_Salary', 0.0)
+
+        return row.get('Total approved', 0.0)
+
+    df_cf_cleaned['Total approved'] = df_cf_cleaned.apply(get_sanctioned_total_for_expense, axis=1)
+
     # Note: 'Partners Monthly Payment' sheet is always excluded from analysis.
 
     # Merging and Aggregating
@@ -759,6 +827,7 @@ def load_data_from_source(source):
     df_merged['Balance_To_Be_Paid'] = df_merged['Sanc_Total'] - df_merged['Paid_Till_Now']
             
     # Clean Cashflow numerics
+    df_cf_cleaned['Total approved'] = pd.to_numeric(df_cf_cleaned['Total approved'], errors='coerce').fillna(0.0)
     df_cf_cleaned['Total paid per expense Head'] = pd.to_numeric(df_cf_cleaned['Total paid per expense Head'], errors='coerce').fillna(0.0)
     df_cf_cleaned['Total Unpaid'] = pd.to_numeric(df_cf_cleaned['Total Unpaid'], errors='coerce').fillna(0.0)
     df_cf_cleaned['Expense head'] = df_cf_cleaned['Expense head'].fillna('Other fees')
@@ -1009,7 +1078,9 @@ with tab1:
             f"{int(df_filtered['Students_Tuition'].sum()):,}",
             f"{int(df_filtered['Students_Hostel'].sum()):,}",
             f"{int(df_filtered['Students_Nutrition'].sum()):,}",
-            "N/A (Staff Support)"
+            # Teacher/founder salary uses the sanctioned No of Teachers column
+            # from the Amount sheet (Excel column BI, e.g. BI124 in the source).
+            f"{int(df_filtered['Sanc_Salary_Staff'].sum()):,}"
         ],
         "Total Sanctioned Budget": [
             format_inr(df_filtered['Sanc_Tuition'].sum()),
@@ -1135,13 +1206,15 @@ with tab1:
                     'Installment': f"{inst_num}st" if inst_num == 1 else (f"{inst_num}nd" if inst_num == 2 else (f"{inst_num}rd" if inst_num == 3 else f"{inst_num}th")),
                     'Payment Date': str(date_val).split(' ')[0],
                     'Reference No': ref_val,
-                    'Approved Budget': format_inr(row['Sanc_Total'])
+                    'Approved Budget': format_inr(row['Sanc_Total']),
+                    'Unpaid Balance': format_inr(row['Balance_To_Be_Paid'])
                 })
 
     st.markdown("#### 💳 Installment Transaction Log")
     if all_inst_records:
         df_inst_rec = pd.DataFrame(all_inst_records)
-        st.dataframe(df_inst_rec, use_container_width=True)
+        df_inst_rec.insert(0, 'Sl No', range(1, len(df_inst_rec) + 1))
+        render_fit_table(df_inst_rec)
     else:
         st.info("No installment transaction dates are currently logged in columns 64-73 of the Google Sheet. Transactions and their payment dates will appear here automatically once recorded.")
         
@@ -1237,7 +1310,7 @@ with tab2:
             ]
         }
         df_demo = pd.DataFrame(demo_data)
-        st.dataframe(df_demo, hide_index=True, use_container_width=True)
+        render_fit_table(df_demo)
         
         # Payment Cycle timeline in Left Column (HTML formatting flattened to prevent markdown code block treatment)
         st.markdown("#### Payout Cycle & Installment Timeline")
@@ -1325,7 +1398,7 @@ with tab2:
             ]
         }
         df_budget = pd.DataFrame(budget_data)
-        st.dataframe(df_budget, hide_index=True, use_container_width=True)
+        render_fit_table(df_budget)
         
     st.markdown("#### Itemized Cashflow & Disbursement Milestones")
     df_cf_school = df_cf_filtered[df_cf_filtered['Institution'] == selected_school].copy()
@@ -1333,18 +1406,10 @@ with tab2:
     if not df_cf_school.empty:
         # Calculate category-specific remaining balance
         def get_category_remaining_balance(row):
-            eh = str(row['Expense head']).strip().lower()
-            if 'tuition' in eh or 'admission' in eh:
-                sanc = sch_row['Sanc_Tuition']
-            elif 'hostel' in eh:
-                sanc = sch_row['Sanc_Hostel']
-            elif 'nutrition' in eh:
-                sanc = sch_row['Sanc_Nutrition']
-            elif 'salary' in eh or 'teacher' in eh or 'founder' in eh:
-                sanc = sch_row['Sanc_Salary']
-            else:
+            sanc = pd.to_numeric(row['Total approved'], errors='coerce')
+            if pd.isna(sanc):
                 sanc = 0.0
-            
+
             paid = pd.to_numeric(row['Total paid per expense Head'], errors='coerce')
             if pd.isna(paid):
                 paid = 0.0
@@ -1352,16 +1417,18 @@ with tab2:
 
         df_cf_school['Category Remaining Balance'] = df_cf_school.apply(get_category_remaining_balance, axis=1)
 
-        display_cf_cols = ['Expense head', 'Total paid per expense Head', 'Category Remaining Balance']
+        display_cf_cols = ['Expense head', 'Total approved', 'Total paid per expense Head', 'Category Remaining Balance']
         df_cf_show = df_cf_school[display_cf_cols].rename(columns={
             'Expense head': 'Expense Category',
+            'Total approved': 'Approved Amount (INR)',
             'Total paid per expense Head': 'Disbursed Amount (INR)',
             'Category Remaining Balance': 'Remaining Balance (INR)'
         })
         # Format amounts in the table
+        df_cf_show['Approved Amount (INR)'] = df_cf_show['Approved Amount (INR)'].map(format_inr)
         df_cf_show['Disbursed Amount (INR)'] = df_cf_show['Disbursed Amount (INR)'].map(format_inr)
         df_cf_show['Remaining Balance (INR)'] = df_cf_show['Remaining Balance (INR)'].map(format_inr)
-        st.dataframe(df_cf_show, hide_index=True, use_container_width=True)
+        render_fit_table(df_cf_show)
         
         st.markdown("#### Monthly Payout Timeline breakdown (INR)")
         monthly_sched_cols = [f"{m}_Total" for m in months_names]
@@ -1372,7 +1439,7 @@ with tab2:
             df_monthly_sched[col] = pd.to_numeric(df_monthly_sched[col], errors='coerce').fillna(0.0)
             df_monthly_sched[col] = df_monthly_sched[col].map(format_inr)
             
-        st.dataframe(df_monthly_sched, hide_index=True, use_container_width=True)
+        render_fit_table(df_monthly_sched)
     else:
         st.info("No itemized expense head disbursements found in the Cashflow logs for this school.")
 
