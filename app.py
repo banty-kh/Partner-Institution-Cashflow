@@ -1044,7 +1044,9 @@ with tab1:
             f"{int(df_filtered['Students_Tuition'].sum()):,}",
             f"{int(df_filtered['Students_Hostel'].sum()):,}",
             f"{int(df_filtered['Students_Nutrition'].sum()):,}",
-            "N/A (Staff Support)"
+            # Teacher/founder salary uses the sanctioned No of Teachers column
+            # from the Amount sheet (Excel column BI, e.g. BI124 in the source).
+            f"{int(df_filtered['Sanc_Salary_Staff'].sum()):,}"
         ],
         "Total Sanctioned Budget": [
             format_inr(df_filtered['Sanc_Tuition'].sum()),
