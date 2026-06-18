@@ -891,9 +891,9 @@ selected_states = st.sidebar.multiselect("Select State", states, default=[], pla
 pocs = sorted(df_schools['POC'].unique().tolist())
 selected_pocs = st.sidebar.multiselect("Select POC", pocs, default=[], placeholder="All POCs (Overall)")
 
-# Type of School Filter
+# Type of Partner Institution Filter
 base_types = sorted(df_schools['Type of School'].unique().tolist())
-selected_base_types = st.sidebar.multiselect("Select Type of School", base_types, default=[], placeholder="All Types (Overall)")
+selected_base_types = st.sidebar.multiselect("Select Type of Partner Institution", base_types, default=[], placeholder="All Types (Overall)")
 
 # Donor Filter
 donors = sorted(df_schools['Donor'].unique().tolist())
@@ -906,10 +906,10 @@ with st.sidebar.expander("🛠️ Power Query ETL Pipeline", expanded=False):
     <div style='font-size: 0.85rem; line-height: 1.4; color: #cbd5e1;'>
         <div style='margin-bottom: 8px;'><strong>1. Extract Data:</strong><br>Parsed 3 sheets (Amount, Summa, Cashflow) from Excel source.</div>
         <div style='margin-bottom: 8px;'><strong>2. Clean & Map POCs:</strong><br>Standardized POC name variations and resolved Anjali to <code>Barla</code>.</div>
-        <div style='margin-bottom: 8px;'><strong>3. Context Propagation:</strong><br>Forward-filled empty school names to correctly sum multi-approval rows (e.g., Alpha hostel).</div>
-        <div style='margin-bottom: 8px;'><strong>4. Standardize Names:</strong><br>Fuzzy-matched and standardized variations of school names.</div>
+        <div style='margin-bottom: 8px;'><strong>3. Context Propagation:</strong><br>Forward-filled empty partner institution names to correctly sum multi-approval rows (e.g., Alpha hostel).</div>
+        <div style='margin-bottom: 8px;'><strong>4. Standardize Names:</strong><br>Fuzzy-matched and standardized variations of partner institution names.</div>
         <div style='margin-bottom: 8px;'><strong>5. Skip Summaries:</strong><br>Dynamically filtered out grand totals and bottom text summaries via Sl no & running sum.</div>
-        <div><strong>6. Merge & Load:</strong><br>Aggregated payments and student counts to generate master schools registry.</div>
+        <div><strong>6. Merge & Load:</strong><br>Aggregated payments and student counts to generate master partner institutions registry.</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1018,7 +1018,7 @@ disbursed_pct = (total_disbursed / total_sanc_budget * 100) if total_sanc_budget
 with col1:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">Partner Schools</div>
+        <div class="kpi-title">Partner Institutions</div>
         <div class="kpi-value">{total_schools}</div>
         <div class="kpi-subtitle">Active Institutions</div>
     </div>
@@ -1117,9 +1117,56 @@ with tab1:
         showlegend=True,
         legend=dict(orientation="h", y=-0.1)
     )
-    st.markdown('<div class="kpi-card" style="padding: 15px; border-top: 3px solid #0f766e;">', unsafe_allow_html=True)
-    st.plotly_chart(fig_donut, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+
+    df_state_institution_counts = (
+        df_filtered.groupby('State')['Institution']
+        .nunique()
+        .reset_index(name='Number of Partner Institutions')
+        .sort_values('Number of Partner Institutions', ascending=False)
+    )
+    max_state_institutions = df_state_institution_counts['Number of Partner Institutions'].max()
+    y_axis_max = max_state_institutions * 1.2 if max_state_institutions > 0 else 1
+
+    fig_state_institutions = px.bar(
+        df_state_institution_counts,
+        x='State',
+        y='Number of Partner Institutions',
+        title="Number of Partner Institutions by State",
+        labels={
+            'State': 'State',
+            'Number of Partner Institutions': 'Number of Partner Institutions'
+        },
+        color='State',
+        color_discrete_sequence=px.colors.qualitative.Pastel2,
+        text='Number of Partner Institutions'
+    )
+    fig_state_institutions.update_layout(
+        title_x=0.0,
+        template="plotly_white",
+        showlegend=False,
+        yaxis=dict(
+            title=None,
+            showticklabels=False,
+            showgrid=False,
+            zeroline=False,
+            range=[0, y_axis_max]
+        )
+    )
+    fig_state_institutions.update_xaxes(title_text="State")
+    fig_state_institutions.update_traces(
+        textposition='outside',
+        hovertemplate='<b>%{x}</b><br>Partner Institutions: %{y}<extra></extra>'
+    )
+
+    budget_chart_col, state_school_chart_col = st.columns(2)
+    with budget_chart_col:
+        st.markdown('<div class="kpi-card" style="padding: 15px; border-top: 3px solid #0f766e;">', unsafe_allow_html=True)
+        st.plotly_chart(fig_donut, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with state_school_chart_col:
+        st.markdown('<div class="kpi-card" style="padding: 15px; border-top: 3px solid #0f766e;">', unsafe_allow_html=True)
+        st.plotly_chart(fig_state_institutions, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # Grouped Bar chart: Statewise Sanctioned vs Paid
     df_state = df_filtered.groupby('State')[['Sanc_Total', 'Paid_Till_Now']].sum().reset_index()
@@ -1200,7 +1247,7 @@ with tab1:
             is_paid = pd.notna(date_val) and str(date_val).strip() != '' and str(date_val).strip().lower() != 'nan'
             if is_paid:
                 all_inst_records.append({
-                    'School': row['Institution'],
+                    'Partner Institution': row['Institution'],
                     'State': row['State'],
                     'POC': row['POC'],
                     'Installment': f"{inst_num}st" if inst_num == 1 else (f"{inst_num}nd" if inst_num == 2 else (f"{inst_num}rd" if inst_num == 3 else f"{inst_num}th")),
@@ -1210,7 +1257,7 @@ with tab1:
                     'Unpaid Balance': format_inr(row['Balance_To_Be_Paid'])
                 })
 
-    st.markdown("#### 💳 Installment Transaction Log")
+    st.markdown("#### 💳 Partner Institution Installment Transaction Log")
     if all_inst_records:
         df_inst_rec = pd.DataFrame(all_inst_records)
         df_inst_rec.insert(0, 'Sl No', range(1, len(df_inst_rec) + 1))
@@ -1254,7 +1301,7 @@ with tab1:
         y='Institution',
         orientation='h',
         title="Top 10 Partner Institutions by Approved Budget",
-        labels={'Sanc_Total': 'Total Budget (INR)', 'Institution': 'School Name'},
+        labels={'Sanc_Total': 'Total Budget (INR)', 'Institution': 'Partner Institution'},
         color='Institution',
         color_discrete_sequence=px.colors.qualitative.Pastel2,
         text=top_10['Sanc_Total'].apply(format_inr)
@@ -1284,7 +1331,7 @@ with tab2:
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
             <div><strong>State:</strong> {sch_row['State']}</div>
             <div><strong>Point of Contact (POC):</strong> {sch_row['POC']}</div>
-            <div><strong>Type of School:</strong> {sch_row['Type of School']}</div>
+            <div><strong>Type of Partner Institution:</strong> {sch_row['Type of School']}</div>
             <div><strong>Donor Mapping:</strong> {sch_row['Donor']}</div>
             <div><strong>Recommended By:</strong> {sch_row['Recommended_By']}</div>
         </div>
@@ -1441,7 +1488,7 @@ with tab2:
             
         render_fit_table(df_monthly_sched)
     else:
-        st.info("No itemized expense head disbursements found in the Cashflow logs for this school.")
+        st.info("No itemized expense head disbursements found in the Cashflow logs for this partner institution.")
 
 # ==================== TAB 3: MONITORING & EVALUATION (M&E) ====================
 with tab3:
@@ -1585,7 +1632,7 @@ with tab4:
     }
     """)
 
-    st.markdown("#### 🏫 Master Schools Registry")
+    st.markdown("#### 🏫 Master Partner Institutions Registry")
     
     # Master Schools Registry AgGrid Configuration
     gb_master = GridOptionsBuilder.from_dataframe(df_filtered)
@@ -1653,7 +1700,7 @@ with tab4:
     st.markdown("---")
     # Dynamic Pivot Tables and Pivot Charts
     st.markdown("### Dynamic Pivot Builder")
-    st.markdown("Build your own pivot tables and charts dynamically across school datasets.")
+    st.markdown("Build your own pivot tables and charts dynamically across partner institution datasets.")
     
     pivot_df = df_filtered.copy()
     
