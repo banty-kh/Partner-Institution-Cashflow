@@ -1117,9 +1117,38 @@ with tab1:
         showlegend=True,
         legend=dict(orientation="h", y=-0.1)
     )
-    st.markdown('<div class="kpi-card" style="padding: 15px; border-top: 3px solid #0f766e;">', unsafe_allow_html=True)
-    st.plotly_chart(fig_donut, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+
+    df_state_school_counts = (
+        df_filtered.groupby('State')['Institution']
+        .nunique()
+        .reset_index(name='Number of Schools')
+        .sort_values('Number of Schools', ascending=False)
+    )
+    fig_state_schools = go.Figure(data=[go.Pie(
+        labels=df_state_school_counts['State'],
+        values=df_state_school_counts['Number of Schools'],
+        hole=.4,
+        marker=dict(colors=px.colors.qualitative.Pastel2),
+        texttemplate='%{value:,} schools<br>%{percent}',
+        textinfo='value+percent'
+    )])
+    fig_state_schools.update_layout(
+        title_text="Number of Schools by State",
+        title_x=0.0,
+        template="plotly_white",
+        showlegend=True,
+        legend=dict(orientation="h", y=-0.1)
+    )
+
+    budget_chart_col, state_school_chart_col = st.columns(2)
+    with budget_chart_col:
+        st.markdown('<div class="kpi-card" style="padding: 15px; border-top: 3px solid #0f766e;">', unsafe_allow_html=True)
+        st.plotly_chart(fig_donut, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with state_school_chart_col:
+        st.markdown('<div class="kpi-card" style="padding: 15px; border-top: 3px solid #0f766e;">', unsafe_allow_html=True)
+        st.plotly_chart(fig_state_schools, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # Grouped Bar chart: Statewise Sanctioned vs Paid
     df_state = df_filtered.groupby('State')[['Sanc_Total', 'Paid_Till_Now']].sum().reset_index()
