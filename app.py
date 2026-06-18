@@ -272,6 +272,23 @@ def format_inr(val):
         return f"-₹{formatted_int}"
     return f"₹{formatted_int}"
 
+# Helper to format dates to DD-MM-YYYY
+def format_date_dmy(val):
+    if pd.isna(val) or str(val).strip() == '' or str(val).strip().lower() == 'nan':
+        return ""
+    try:
+        dt = pd.to_datetime(val)
+        return dt.strftime('%d-%m-%Y')
+    except:
+        clean_str = str(val).split(' ')[0]
+        try:
+            parts = clean_str.split('-')
+            if len(parts) == 3 and len(parts[0]) == 4:
+                return f"{parts[2]}-{parts[1]}-{parts[0]}"
+        except:
+            pass
+        return clean_str
+
 
 def render_fit_table(df, height=None):
     """Render compact read-only tables with wrapped, visible columns."""
@@ -1140,8 +1157,7 @@ with tab1:
     fig_state_schools.update_layout(
         title_x=0.0,
         template="plotly_white",
-        showlegend=False,
-        yaxis=dict(dtick=1)
+        showlegend=False
     )
     fig_state_schools.update_traces(textposition='outside')
 
@@ -1238,7 +1254,7 @@ with tab1:
                     'State': row['State'],
                     'POC': row['POC'],
                     'Installment': f"{inst_num}st" if inst_num == 1 else (f"{inst_num}nd" if inst_num == 2 else (f"{inst_num}rd" if inst_num == 3 else f"{inst_num}th")),
-                    'Payment Date': str(date_val).split(' ')[0],
+                    'Payment Date': format_date_dmy(date_val),
                     'Reference No': ref_val,
                     'Approved Budget': format_inr(row['Sanc_Total']),
                     'Unpaid Balance': format_inr(row['Balance_To_Be_Paid'])
@@ -1361,7 +1377,7 @@ with tab2:
                 inst_status.append({
                     'name': f"{inst_num}{inst_suffix} Installment",
                     'status': "✅ Disbursed",
-                    'date': str(date_val).split(' ')[0],
+                    'date': format_date_dmy(date_val),
                     'ref': str(ref_val),
                     'color': "#10b981",
                     'icon': "✓"
@@ -1566,7 +1582,7 @@ with tab3:
     st.markdown("""
     When logging offline information into the Excel / Google Sheets, ensure the following standards are met to preserve dashboard data integrity:
     
-    1. **Installment Date Formatting:** Log transaction dates strictly in `YYYY-MM-DD` format (avoid text descriptions like 'pending' or 'released' in date columns).
+    1. **Installment Date Formatting:** Log transaction dates strictly in `DD-MM-YYYY` format (avoid text descriptions like 'pending' or 'released' in date columns).
     2. **Disbursement Head Mapping:** Ensure expense heads in the Cashflow sheet match standardized naming (`Tuition fees`, `Hostel fees`, `Nutrition fees`, `Teacher's Salary`, `Founder Salary`).
     3. **Remark Standards:** Always enter the specific cause for payment delays or student variance in the `Remark` field (e.g., *'Delayed school reopening'*, *'Cohort transfer to Base school'*).
     4. **Student Counts:** Record actual active students attending for that month, rather than copy-pasting the approved cap.
