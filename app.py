@@ -1018,7 +1018,7 @@ disbursed_pct = (total_disbursed / total_sanc_budget * 100) if total_sanc_budget
 with col1:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">Partner Schools</div>
+        <div class="kpi-title">Partner Institutions</div>
         <div class="kpi-value">{total_schools}</div>
         <div class="kpi-subtitle">Active Institutions</div>
     </div>
@@ -1117,9 +1117,43 @@ with tab1:
         showlegend=True,
         legend=dict(orientation="h", y=-0.1)
     )
-    st.markdown('<div class="kpi-card" style="padding: 15px; border-top: 3px solid #0f766e;">', unsafe_allow_html=True)
-    st.plotly_chart(fig_donut, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+
+    df_state_school_counts = (
+        df_filtered.groupby('State')['Institution']
+        .nunique()
+        .reset_index(name='Number of Partner Institutions')
+        .sort_values('Number of Partner Institutions', ascending=False)
+    )
+    fig_state_schools = px.bar(
+        df_state_school_counts,
+        x='State',
+        y='Number of Partner Institutions',
+        title="Number of Partner Institutions by State",
+        labels={
+            'State': 'State',
+            'Number of Partner Institutions': 'Number of Partner Institutions'
+        },
+        color='State',
+        color_discrete_sequence=px.colors.qualitative.Pastel2,
+        text='Number of Partner Institutions'
+    )
+    fig_state_schools.update_layout(
+        title_x=0.0,
+        template="plotly_white",
+        showlegend=False,
+        yaxis=dict(dtick=1)
+    )
+    fig_state_schools.update_traces(textposition='outside')
+
+    budget_chart_col, state_school_chart_col = st.columns(2)
+    with budget_chart_col:
+        st.markdown('<div class="kpi-card" style="padding: 15px; border-top: 3px solid #0f766e;">', unsafe_allow_html=True)
+        st.plotly_chart(fig_donut, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with state_school_chart_col:
+        st.markdown('<div class="kpi-card" style="padding: 15px; border-top: 3px solid #0f766e;">', unsafe_allow_html=True)
+        st.plotly_chart(fig_state_schools, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # Grouped Bar chart: Statewise Sanctioned vs Paid
     df_state = df_filtered.groupby('State')[['Sanc_Total', 'Paid_Till_Now']].sum().reset_index()
@@ -1200,7 +1234,7 @@ with tab1:
             is_paid = pd.notna(date_val) and str(date_val).strip() != '' and str(date_val).strip().lower() != 'nan'
             if is_paid:
                 all_inst_records.append({
-                    'School': row['Institution'],
+                    'Partner Institution': row['Institution'],
                     'State': row['State'],
                     'POC': row['POC'],
                     'Installment': f"{inst_num}st" if inst_num == 1 else (f"{inst_num}nd" if inst_num == 2 else (f"{inst_num}rd" if inst_num == 3 else f"{inst_num}th")),
@@ -1254,7 +1288,7 @@ with tab1:
         y='Institution',
         orientation='h',
         title="Top 10 Partner Institutions by Approved Budget",
-        labels={'Sanc_Total': 'Total Budget (INR)', 'Institution': 'School Name'},
+        labels={'Sanc_Total': 'Total Budget (INR)', 'Institution': 'Partner Institution'},
         color='Institution',
         color_discrete_sequence=px.colors.qualitative.Pastel2,
         text=top_10['Sanc_Total'].apply(format_inr)
@@ -1585,7 +1619,7 @@ with tab4:
     }
     """)
 
-    st.markdown("#### 🏫 Master Schools Registry")
+    st.markdown("#### 🏫 Master Partner Institutions Registry")
     
     # Master Schools Registry AgGrid Configuration
     gb_master = GridOptionsBuilder.from_dataframe(df_filtered)
