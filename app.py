@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import requests
 import io
-from st_aggrid import AgGrid, GridOptionsBuilder
+from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # Set page config
 st.set_page_config(
@@ -276,18 +276,26 @@ def format_inr(val):
 def format_date_dmy(val):
     if pd.isna(val) or str(val).strip() == '' or str(val).strip().lower() == 'nan':
         return ""
+    
+    val_str = str(val).strip()
+    date_part = val_str.split(' ')[0]
+    import re
+    
+    # If already in DD-MM-YYYY or DD/MM/YYYY format, standardize to DD-MM-YYYY
+    m_dmy = re.match(r'^(\d{2})[-/](\d{2})[-/](\d{4})$', date_part)
+    if m_dmy:
+        return f"{m_dmy.group(1)}-{m_dmy.group(2)}-{m_dmy.group(3)}"
+        
+    # If in YYYY-MM-DD or YYYY/MM/DD format, convert to DD-MM-YYYY
+    m_ymd = re.match(r'^(\d{4})[-/](\d{2})[-/](\d{2})$', date_part)
+    if m_ymd:
+        return f"{m_ymd.group(3)}-{m_ymd.group(2)}-{m_ymd.group(1)}"
+        
     try:
         dt = pd.to_datetime(val)
         return dt.strftime('%d-%m-%Y')
     except:
-        clean_str = str(val).split(' ')[0]
-        try:
-            parts = clean_str.split('-')
-            if len(parts) == 3 and len(parts[0]) == 4:
-                return f"{parts[2]}-{parts[1]}-{parts[0]}"
-        except:
-            pass
-        return clean_str
+        return date_part
 
 
 def render_fit_table(df, height=None):
@@ -661,16 +669,21 @@ def load_data_from_source(source):
             'Donor': row.iloc[61],
             'Beneficiary': row.iloc[62],
             # Payout Installments and transaction dates
-            'Inst1_Date': row.iloc[64],
-            'Inst1_Ref': row.iloc[65],
+            'Inst1_Date': row.iloc[63],
+            'Inst1_Ref': row.iloc[64],
+            'Inst1_Amount': row.iloc[65],
             'Inst2_Date': row.iloc[66],
             'Inst2_Ref': row.iloc[67],
-            'Inst3_Date': row.iloc[68],
-            'Inst3_Ref': row.iloc[69],
-            'Inst4_Date': row.iloc[70],
-            'Inst4_Ref': row.iloc[71],
-            'Inst5_Date': row.iloc[72],
-            'Inst5_Ref': row.iloc[73]
+            'Inst2_Amount': row.iloc[68],
+            'Inst3_Date': row.iloc[69],
+            'Inst3_Ref': row.iloc[70],
+            'Inst3_Amount': row.iloc[71],
+            'Inst4_Date': row.iloc[72],
+            'Inst4_Ref': row.iloc[73],
+            'Inst4_Amount': row.iloc[74],
+            'Inst5_Date': row.iloc[75],
+            'Inst5_Ref': row.iloc[76],
+            'Inst5_Amount': row.iloc[77]
         }
         
         months = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March']
@@ -687,34 +700,141 @@ def load_data_from_source(source):
     df_cf_cleaned['Institution'] = df_cf_cleaned['Institution'].apply(standardize_name)
     df_cf_cleaned = df_cf_cleaned[df_cf_cleaned['Institution'] != "FILTER_OUT_SUMMARY_ROW"].copy()
 
-    # Align cashflow approved amounts with the sanctioned Total Amount columns
-    # from the Amount sheet for each respective expense head. The Cashflow
-    # sheet's `Total approved` column can repeat an institution-level total on
-    # every itemized row, so replacing it here keeps cashflow exports and
-    # remaining-balance calculations category-specific.
-    sanctioned_totals_by_head = df_amt_cleaned.groupby('Institution').agg({
-        'Sanc_Tuition': 'sum',
-        'Sanc_Hostel': 'sum',
-        'Sanc_Nutrition': 'sum',
-        'Sanc_Salary': 'sum'
-    }).to_dict('index')
+    # Assign category groups for sequential matching
+    df_cf_cleaned['Category_Group'] = 'other'
+    for idx, row in df_cf_cleaned.iterrows():
+        head = str(row['Expense head']).strip().lower()
+        if 'tuition' in head or 'tution' in head or 'admission' in head:
+            df_cf_cleaned.at[idx, 'Category_Group'] = 'tuition'
+        elif 'hostel' in head:
+            df_cf_cleaned.at[idx, 'Category_Group'] = 'hostel'
+        elif 'nutrition' in head:
+            df_cf_cleaned.at[idx, 'Category_Group'] = 'nutrition'
+        elif 'salary' in head or 'teacher' in head or 'founder' in head:
+            df_cf_cleaned.at[idx, 'Category_Group'] = 'salary'
+
+    df_cf_cleaned['occurrence_index'] = df_cf_cleaned.groupby(['Institution', 'Category_Group']).cumcount()
+    df_cf_cleaned['total_occurrences'] = df_cf_cleaned.groupby(['Institution', 'Category_Group'])['Category_Group'].transform('count')
 
     def get_sanctioned_total_for_expense(row):
-        head = str(row.get('Expense head', '')).strip().lower()
-        inst_totals = sanctioned_totals_by_head.get(row.get('Institution'), {})
+        inst = row.get('Institution')
+        cat_group = row.get('Category_Group')
+        occ_idx = row.get('occurrence_index')
+        tot_occ = row.get('total_occurrences')
+        
+        # Determine the number of students for this cashflow row
+        students = 0
+        months = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March']
+        for m in months:
+            val = row.get(f'{m}_Students')
+            try:
+                val = float(str(val).replace(',', '').strip())
+                if pd.notna(val) and val > 0:
+                    students = int(val)
+                    break
+            except:
+                pass
+                
+        # Find matching row in df_amt_cleaned
+        df_match = df_amt_cleaned[df_amt_cleaned['Institution'] == inst]
+        
+        if cat_group == 'tuition':
+            if students > 0:
+                df_stud_match = df_match[df_match['Sanc_Tuition_Students'] == students]
+                if not df_stud_match.empty:
+                    matched_row = df_stud_match.iloc[0]
+                    return matched_row['Sanc_Tuition'], int(matched_row['Sanc_Tuition_Students']) if pd.notna(matched_row['Sanc_Tuition_Students']) else students
+            df_cat_match = df_match[df_match['Sanc_Tuition'] > 0]
+            if tot_occ > 1 and occ_idx < len(df_cat_match):
+                matched_row = df_cat_match.iloc[occ_idx]
+                return matched_row['Sanc_Tuition'], int(matched_row['Sanc_Tuition_Students']) if pd.notna(matched_row['Sanc_Tuition_Students']) else students
+            # fallback
+            amt = df_match['Sanc_Tuition'].sum()
+            matched_stud = students
+            if not df_match.empty:
+                df_cat_match = df_match[df_match['Sanc_Tuition'] > 0]
+                if not df_cat_match.empty:
+                    matched_row = df_cat_match.iloc[0]
+                    matched_stud = int(matched_row['Sanc_Tuition_Students']) if pd.notna(matched_row['Sanc_Tuition_Students']) else students
+                else:
+                    matched_row = df_match.iloc[0]
+                    matched_stud = int(matched_row['Sanc_Tuition_Students']) if pd.notna(matched_row['Sanc_Tuition_Students']) else students
+            return amt, matched_stud
+            
+        if cat_group == 'hostel':
+            if students > 0:
+                df_stud_match = df_match[df_match['Sanc_Hostel_Students'] == students]
+                if not df_stud_match.empty:
+                    matched_row = df_stud_match.iloc[0]
+                    return matched_row['Sanc_Hostel'], int(matched_row['Sanc_Hostel_Students']) if pd.notna(matched_row['Sanc_Hostel_Students']) else students
+            df_cat_match = df_match[df_match['Sanc_Hostel'] > 0]
+            if tot_occ > 1 and occ_idx < len(df_cat_match):
+                matched_row = df_cat_match.iloc[occ_idx]
+                return matched_row['Sanc_Hostel'], int(matched_row['Sanc_Hostel_Students']) if pd.notna(matched_row['Sanc_Hostel_Students']) else students
+            # fallback
+            amt = df_match['Sanc_Hostel'].sum()
+            matched_stud = students
+            if not df_match.empty:
+                df_cat_match = df_match[df_match['Sanc_Hostel'] > 0]
+                if not df_cat_match.empty:
+                    matched_row = df_cat_match.iloc[0]
+                    matched_stud = int(matched_row['Sanc_Hostel_Students']) if pd.notna(matched_row['Sanc_Hostel_Students']) else students
+                else:
+                    matched_row = df_match.iloc[0]
+                    matched_stud = int(matched_row['Sanc_Hostel_Students']) if pd.notna(matched_row['Sanc_Hostel_Students']) else students
+            return amt, matched_stud
+            
+        if cat_group == 'nutrition':
+            if students > 0:
+                df_stud_match = df_match[df_match['Sanc_Nutrition_Students'] == students]
+                if not df_stud_match.empty:
+                    matched_row = df_stud_match.iloc[0]
+                    return matched_row['Sanc_Nutrition'], int(matched_row['Sanc_Nutrition_Students']) if pd.notna(matched_row['Sanc_Nutrition_Students']) else students
+            df_cat_match = df_match[df_match['Sanc_Nutrition'] > 0]
+            if tot_occ > 1 and occ_idx < len(df_cat_match):
+                matched_row = df_cat_match.iloc[occ_idx]
+                return matched_row['Sanc_Nutrition'], int(matched_row['Sanc_Nutrition_Students']) if pd.notna(matched_row['Sanc_Nutrition_Students']) else students
+            # fallback
+            amt = df_match['Sanc_Nutrition'].sum()
+            matched_stud = students
+            if not df_match.empty:
+                df_cat_match = df_match[df_match['Sanc_Nutrition'] > 0]
+                if not df_cat_match.empty:
+                    matched_row = df_cat_match.iloc[0]
+                    matched_stud = int(matched_row['Sanc_Nutrition_Students']) if pd.notna(matched_row['Sanc_Nutrition_Students']) else students
+                else:
+                    matched_row = df_match.iloc[0]
+                    matched_stud = int(matched_row['Sanc_Nutrition_Students']) if pd.notna(matched_row['Sanc_Nutrition_Students']) else students
+            return amt, matched_stud
+            
+        if cat_group == 'salary':
+            if students > 0:
+                df_stud_match = df_match[df_match['Sanc_Salary_Staff'] == students]
+                if not df_stud_match.empty:
+                    matched_row = df_stud_match.iloc[0]
+                    return matched_row['Sanc_Salary'], int(matched_row['Sanc_Salary_Staff']) if pd.notna(matched_row['Sanc_Salary_Staff']) else students
+            df_cat_match = df_match[df_match['Sanc_Salary'] > 0]
+            if tot_occ > 1 and occ_idx < len(df_cat_match):
+                matched_row = df_cat_match.iloc[occ_idx]
+                return matched_row['Sanc_Salary'], int(matched_row['Sanc_Salary_Staff']) if pd.notna(matched_row['Sanc_Salary_Staff']) else students
+            # fallback
+            amt = df_match['Sanc_Salary'].sum()
+            matched_stud = students
+            if not df_match.empty:
+                df_cat_match = df_match[df_match['Sanc_Salary'] > 0]
+                if not df_cat_match.empty:
+                    matched_row = df_cat_match.iloc[0]
+                    matched_stud = int(matched_row['Sanc_Salary_Staff']) if pd.notna(matched_row['Sanc_Salary_Staff']) else students
+                else:
+                    matched_row = df_match.iloc[0]
+                    matched_stud = int(matched_row['Sanc_Salary_Staff']) if pd.notna(matched_row['Sanc_Salary_Staff']) else students
+            return amt, matched_stud
+            
+        return row.get('Total approved', 0.0), students
 
-        if 'tuition' in head or 'admission' in head:
-            return inst_totals.get('Sanc_Tuition', 0.0)
-        if 'hostel' in head:
-            return inst_totals.get('Sanc_Hostel', 0.0)
-        if 'nutrition' in head:
-            return inst_totals.get('Sanc_Nutrition', 0.0)
-        if 'salary' in head or 'teacher' in head or 'founder' in head:
-            return inst_totals.get('Sanc_Salary', 0.0)
-
-        return row.get('Total approved', 0.0)
-
-    df_cf_cleaned['Total approved'] = df_cf_cleaned.apply(get_sanctioned_total_for_expense, axis=1)
+    results = df_cf_cleaned.apply(get_sanctioned_total_for_expense, axis=1)
+    df_cf_cleaned['Total approved'] = [r[0] for r in results]
+    df_cf_cleaned['Matched_Students'] = [r[1] for r in results]
 
     # Note: 'Partners Monthly Payment' sheet is always excluded from analysis.
 
@@ -799,14 +919,19 @@ def load_data_from_source(source):
     df_inst_agg = df_cf_cleaned.groupby('Institution').agg({
         'Inst1_Date': 'first',
         'Inst1_Ref': 'first',
+        'Inst1_Amount': 'first',
         'Inst2_Date': 'first',
         'Inst2_Ref': 'first',
+        'Inst2_Amount': 'first',
         'Inst3_Date': 'first',
         'Inst3_Ref': 'first',
+        'Inst3_Amount': 'first',
         'Inst4_Date': 'first',
         'Inst4_Ref': 'first',
+        'Inst4_Amount': 'first',
         'Inst5_Date': 'first',
         'Inst5_Ref': 'first',
+        'Inst5_Amount': 'first',
     }).reset_index()
 
     df_merged = df_amt_agg.merge(df_sum_agg, on='Institution', how='outer')
@@ -840,6 +965,8 @@ def load_data_from_source(source):
     for col in numeric_cols:
         if col in df_merged.columns:
             df_merged[col] = pd.to_numeric(df_merged[col], errors='coerce').fillna(0.0)
+        if col in df_amt_cleaned.columns:
+            df_amt_cleaned[col] = pd.to_numeric(df_amt_cleaned[col], errors='coerce').fillna(0.0)
             
     df_merged['Balance_To_Be_Paid'] = df_merged['Sanc_Total'] - df_merged['Paid_Till_Now']
             
@@ -854,7 +981,51 @@ def load_data_from_source(source):
     for m in months:
         df_cf_cleaned[f'{m}_Total'] = pd.to_numeric(df_cf_cleaned[f'{m}_Total'], errors='coerce').fillna(0.0)
 
-    return df_merged, df_cf_cleaned
+    # Format all installment date columns to DD-MM-YYYY strings for display uniformity
+    for inst_num in range(1, 6):
+        col = f'Inst{inst_num}_Date'
+        if col in df_merged.columns:
+            df_merged[col] = df_merged[col].apply(format_date_dmy)
+        if col in df_cf_cleaned.columns:
+            df_cf_cleaned[col] = df_cf_cleaned[col].apply(format_date_dmy)
+
+    # Format all expense head labels in df_cf_cleaned to include student count in parenthesis uniformly
+    def format_expense_with_students(row):
+        exp = str(row.get('Expense head', '')).strip()
+        exp = exp[0].upper() + exp[1:] if exp else ""
+        
+        # Clean up any existing suffix to avoid duplicates
+        import re
+        exp = re.sub(r'\s*\(\d+\)$', '', exp)
+        
+        # Find student count for this cashflow row
+        students = 0
+        months = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March']
+        for m in months:
+            val = row.get(f'{m}_Students')
+            try:
+                val = float(str(val).replace(',', '').strip())
+                if pd.notna(val) and val > 0:
+                    students = int(val)
+                    break
+            except:
+                pass
+        
+        if students <= 0:
+            try:
+                matched_stud = row.get('Matched_Students', 0)
+                if pd.notna(matched_stud) and matched_stud > 0:
+                    students = int(matched_stud)
+            except:
+                pass
+                
+        if students > 0:
+            return f"{exp} ({students})"
+        return exp
+
+    df_cf_cleaned['Expense head'] = df_cf_cleaned.apply(format_expense_with_students, axis=1)
+
+    return df_merged, df_cf_cleaned, df_amt_cleaned
 
 import os
 import datetime
@@ -869,6 +1040,7 @@ LOCAL_FILE_PATH = os.path.join(os.path.dirname(__file__), "Partner Institution C
 # Load the data from Google Sheet or Local backup
 df_schools = None
 df_cashflow = None
+df_amt_raw = None
 data_source = ""
 last_sync_time = None
 
@@ -877,13 +1049,13 @@ with st.spinner("📥 Loading cashflow data..."):
     try:
         response = requests.get(google_sheets_url, timeout=15)
         response.raise_for_status()
-        df_schools, df_cashflow = load_data_from_source(io.BytesIO(response.content))
+        df_schools, df_cashflow, df_amt_raw = load_data_from_source(io.BytesIO(response.content))
         data_source = "Live (Google Sheets)"
     except Exception as live_err:
         # Fallback to local offline file
         if os.path.exists(LOCAL_FILE_PATH):
             try:
-                df_schools, df_cashflow = load_data_from_source(LOCAL_FILE_PATH)
+                df_schools, df_cashflow, df_amt_raw = load_data_from_source(LOCAL_FILE_PATH)
                 data_source = "Offline (Local Disk File)"
                 mtime = os.path.getmtime(LOCAL_FILE_PATH)
                 last_sync_time = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
@@ -1247,6 +1419,7 @@ with tab1:
         for inst_num in range(1, 6):
             date_val = row.get(f'Inst{inst_num}_Date')
             ref_val = row.get(f'Inst{inst_num}_Ref')
+            amt_val = row.get(f'Inst{inst_num}_Amount')
             is_paid = pd.notna(date_val) and str(date_val).strip() != '' and str(date_val).strip().lower() != 'nan'
             if is_paid:
                 all_inst_records.append({
@@ -1256,8 +1429,7 @@ with tab1:
                     'Installment': f"{inst_num}st" if inst_num == 1 else (f"{inst_num}nd" if inst_num == 2 else (f"{inst_num}rd" if inst_num == 3 else f"{inst_num}th")),
                     'Payment Date': format_date_dmy(date_val),
                     'Reference No': ref_val,
-                    'Approved Budget': format_inr(row['Sanc_Total']),
-                    'Unpaid Balance': format_inr(row['Balance_To_Be_Paid'])
+                    'Amount Paid': format_inr(amt_val) if pd.notna(amt_val) and str(amt_val).strip() != '' else "₹0"
                 })
 
     st.markdown("#### 💳 Partner Institution Installment Transaction Log")
@@ -1266,7 +1438,7 @@ with tab1:
         df_inst_rec.insert(0, 'Sl No', range(1, len(df_inst_rec) + 1))
         render_fit_table(df_inst_rec)
     else:
-        st.info("No installment transaction dates are currently logged in columns 64-73 of the Google Sheet. Transactions and their payment dates will appear here automatically once recorded.")
+        st.info("No installment transaction details are currently logged in columns 64-78 of the Google Sheet. Transactions, payment dates, and amounts will appear here automatically once recorded.")
         
     st.markdown("---")
     
@@ -1368,6 +1540,7 @@ with tab2:
         for inst_num in range(1, 6):
             date_val = sch_row.get(f'Inst{inst_num}_Date')
             ref_val = sch_row.get(f'Inst{inst_num}_Ref')
+            amt_val = sch_row.get(f'Inst{inst_num}_Amount')
             
             is_paid = pd.notna(date_val) and str(date_val).strip() != '' and str(date_val).strip().lower() != 'nan'
             
@@ -1379,6 +1552,7 @@ with tab2:
                     'status': "✅ Disbursed",
                     'date': format_date_dmy(date_val),
                     'ref': str(ref_val),
+                    'amount': format_inr(amt_val) if pd.notna(amt_val) and str(amt_val).strip() != '' else "N/A",
                     'color': "#10b981",
                     'icon': "✓"
                 })
@@ -1391,63 +1565,125 @@ with tab2:
                     'color': "#94a3b8",
                     'icon': "○"
                 })
-
+ 
         timeline_html = "<div style='padding: 10px; font-family: \"Outfit\", sans-serif;'>"
         for item in inst_status:
-            timeline_html += f"<div style='display: flex; margin-bottom: 12px; align-items: flex-start;'><div style='width: 26px; height: 26px; border-radius: 50%; background-color: {item['color']}; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 12px; font-size: 0.85rem;'>{item['icon']}</div><div style='flex-grow: 1;'><div style='font-weight: 600; color: #1e293b; font-size: 0.95rem;'>{item['name']} - <span style='color: {item['color']}; font-weight: bold;'>{item['status']}</span></div><div style='font-size: 0.8rem; color: #64748b; margin-top: 2px;'>Date: {item['date']} | Ref: {item['ref']}</div></div></div>"
+            amt_str = f" | Amount: {item['amount']}" if 'amount' in item else ""
+            timeline_html += f"<div style='display: flex; margin-bottom: 12px; align-items: flex-start;'><div style='width: 26px; height: 26px; border-radius: 50%; background-color: {item['color']}; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 12px; font-size: 0.85rem;'>{item['icon']}</div><div style='flex-grow: 1;'><div style='font-weight: 600; color: #1e293b; font-size: 0.95rem;'>{item['name']} - <span style='color: {item['color']}; font-weight: bold;'>{item['status']}</span></div><div style='font-size: 0.8rem; color: #64748b; margin-top: 2px;'>Date: {item['date']} | Ref: {item['ref']}{amt_str}</div></div></div>"
         timeline_html += "</div>"
         st.markdown(timeline_html, unsafe_allow_html=True)
         
     with c_right:
         st.markdown("#### Approved Budget Payout Structures")
-        budget_data = {
-            "Expense Head": [
-                "Tuition Fees", 
-                "Hostel Fees", 
-                "Nutrition Support", 
-                "Teacher/Founder Salary", 
-                "Total Sanctioned Budget", 
-                "Paid Till Now", 
-                "Outstanding Balance"
-            ],
-            "No. of Students / Staff": [
-                int(sch_row['Sanc_Tuition_Students']) if sch_row['Sanc_Tuition_Students'] > 0 else "-",
-                int(sch_row['Sanc_Hostel_Students']) if sch_row['Sanc_Hostel_Students'] > 0 else "-",
-                int(sch_row['Sanc_Nutrition_Students']) if sch_row['Sanc_Nutrition_Students'] > 0 else "-",
-                int(sch_row['Sanc_Salary_Staff']) if sch_row['Sanc_Salary_Staff'] > 0 else "-",
-                "-",
-                "-",
-                "-"
-            ],
-            "Rate per Month (INR)": [
-                format_inr(sch_row['Sanc_Tuition_Rate']) if sch_row['Sanc_Tuition_Rate'] > 0 else "-",
-                format_inr(sch_row['Sanc_Hostel_Rate']) if sch_row['Sanc_Hostel_Rate'] > 0 else "-",
-                format_inr(sch_row['Sanc_Nutrition_Rate']) if sch_row['Sanc_Nutrition_Rate'] > 0 else "-",
-                format_inr(sch_row['Sanc_Salary_Rate']) if sch_row['Sanc_Salary_Rate'] > 0 else "-",
-                "-",
-                "-",
-                "-"
-            ],
-            "Frequency (Months)": [
-                int(sch_row['Sanc_Tuition_Freq']) if sch_row['Sanc_Tuition_Freq'] > 0 else "-",
-                int(sch_row['Sanc_Hostel_Freq']) if sch_row['Sanc_Hostel_Freq'] > 0 else "-",
-                int(sch_row['Sanc_Nutrition_Freq']) if sch_row['Sanc_Nutrition_Freq'] > 0 else "-",
-                int(sch_row['Sanc_Salary_Freq']) if sch_row['Sanc_Salary_Freq'] > 0 else "-",
-                "-",
-                "-",
-                "-"
-            ],
-            "Amount Approved (INR)": [
-                format_inr(sch_row['Sanc_Tuition']),
-                format_inr(sch_row['Sanc_Hostel']),
-                format_inr(sch_row['Sanc_Nutrition']),
-                format_inr(sch_row['Sanc_Salary']),
-                format_inr(sch_row['Sanc_Total']),
-                format_inr(sch_row['Paid_Till_Now']),
-                format_inr(sch_row['Balance_To_Be_Paid'])
-            ]
-        }
-        df_budget = pd.DataFrame(budget_data)
+        # Filter raw sanctioned rows for the selected school
+        df_amt_school = df_amt_raw[df_amt_raw['Institution'] == selected_school]
+        
+        budget_rows = []
+        
+        # 1. Tuition rows
+        tuition_rows = df_amt_school[df_amt_school['Sanc_Tuition'] > 0]
+        if tuition_rows.empty:
+            budget_rows.append({
+                "Expense Head": "Tuition Fees",
+                "No. of Students / Staff": "-",
+                "Rate per Month (INR)": "-",
+                "Frequency (Months)": "-",
+                "Amount Approved (INR)": "₹0"
+            })
+        else:
+            for _, r in tuition_rows.iterrows():
+                budget_rows.append({
+                    "Expense Head": "Tuition Fees",
+                    "No. of Students / Staff": int(r['Sanc_Tuition_Students']) if r['Sanc_Tuition_Students'] > 0 else "-",
+                    "Rate per Month (INR)": format_inr(r['Sanc_Tuition_Rate']) if r['Sanc_Tuition_Rate'] > 0 else "-",
+                    "Frequency (Months)": int(r['Sanc_Tuition_Freq']) if r['Sanc_Tuition_Freq'] > 0 else "-",
+                    "Amount Approved (INR)": format_inr(r['Sanc_Tuition'])
+                })
+                
+        # 2. Hostel rows
+        hostel_rows = df_amt_school[df_amt_school['Sanc_Hostel'] > 0]
+        if hostel_rows.empty:
+            budget_rows.append({
+                "Expense Head": "Hostel Fees",
+                "No. of Students / Staff": "-",
+                "Rate per Month (INR)": "-",
+                "Frequency (Months)": "-",
+                "Amount Approved (INR)": "₹0"
+            })
+        else:
+            for _, r in hostel_rows.iterrows():
+                budget_rows.append({
+                    "Expense Head": "Hostel Fees",
+                    "No. of Students / Staff": int(r['Sanc_Hostel_Students']) if r['Sanc_Hostel_Students'] > 0 else "-",
+                    "Rate per Month (INR)": format_inr(r['Sanc_Hostel_Rate']) if r['Sanc_Hostel_Rate'] > 0 else "-",
+                    "Frequency (Months)": int(r['Sanc_Hostel_Freq']) if r['Sanc_Hostel_Freq'] > 0 else "-",
+                    "Amount Approved (INR)": format_inr(r['Sanc_Hostel'])
+                })
+                
+        # 3. Nutrition Support rows
+        nutrition_rows = df_amt_school[df_amt_school['Sanc_Nutrition'] > 0]
+        if nutrition_rows.empty:
+            budget_rows.append({
+                "Expense Head": "Nutrition Support",
+                "No. of Students / Staff": "-",
+                "Rate per Month (INR)": "-",
+                "Frequency (Months)": "-",
+                "Amount Approved (INR)": "₹0"
+            })
+        else:
+            for _, r in nutrition_rows.iterrows():
+                budget_rows.append({
+                    "Expense Head": "Nutrition Support",
+                    "No. of Students / Staff": int(r['Sanc_Nutrition_Students']) if r['Sanc_Nutrition_Students'] > 0 else "-",
+                    "Rate per Month (INR)": format_inr(r['Sanc_Nutrition_Rate']) if r['Sanc_Nutrition_Rate'] > 0 else "-",
+                    "Frequency (Months)": int(r['Sanc_Nutrition_Freq']) if r['Sanc_Nutrition_Freq'] > 0 else "-",
+                    "Amount Approved (INR)": format_inr(r['Sanc_Nutrition'])
+                })
+                
+        # 4. Teacher/Founder Salary rows
+        salary_rows = df_amt_school[df_amt_school['Sanc_Salary'] > 0]
+        if salary_rows.empty:
+            budget_rows.append({
+                "Expense Head": "Teacher/Founder Salary",
+                "No. of Students / Staff": "-",
+                "Rate per Month (INR)": "-",
+                "Frequency (Months)": "-",
+                "Amount Approved (INR)": "₹0"
+            })
+        else:
+            for _, r in salary_rows.iterrows():
+                budget_rows.append({
+                    "Expense Head": "Teacher/Founder Salary",
+                    "No. of Students / Staff": int(r['Sanc_Salary_Staff']) if r['Sanc_Salary_Staff'] > 0 else "-",
+                    "Rate per Month (INR)": format_inr(r['Sanc_Salary_Rate']) if r['Sanc_Salary_Rate'] > 0 else "-",
+                    "Frequency (Months)": int(r['Sanc_Salary_Freq']) if r['Sanc_Salary_Freq'] > 0 else "-",
+                    "Amount Approved (INR)": format_inr(r['Sanc_Salary'])
+                })
+                
+        # 5. Summary rows
+        budget_rows.append({
+            "Expense Head": "Total Sanctioned Budget",
+            "No. of Students / Staff": "-",
+            "Rate per Month (INR)": "-",
+            "Frequency (Months)": "-",
+            "Amount Approved (INR)": format_inr(sch_row['Sanc_Total'])
+        })
+        budget_rows.append({
+            "Expense Head": "Paid Till Now",
+            "No. of Students / Staff": "-",
+            "Rate per Month (INR)": "-",
+            "Frequency (Months)": "-",
+            "Amount Approved (INR)": format_inr(sch_row['Paid_Till_Now'])
+        })
+        budget_rows.append({
+            "Expense Head": "Outstanding Balance",
+            "No. of Students / Staff": "-",
+            "Rate per Month (INR)": "-",
+            "Frequency (Months)": "-",
+            "Amount Approved (INR)": format_inr(sch_row['Balance_To_Be_Paid'])
+        })
+        
+        df_budget = pd.DataFrame(budget_rows)
         render_fit_table(df_budget)
         
     st.markdown("#### Itemized Cashflow & Disbursement Milestones")
@@ -1485,11 +1721,71 @@ with tab2:
         df_monthly_sched = df_cf_school[['Expense head'] + monthly_sched_cols].copy()
         df_monthly_sched.columns = ['Expense head'] + months_names
         
+        # Convert all monthly columns to numeric first
         for col in months_names:
             df_monthly_sched[col] = pd.to_numeric(df_monthly_sched[col], errors='coerce').fillna(0.0)
+            
+        # Calculate the totals for each month
+        totals = {col: df_monthly_sched[col].sum() for col in months_names}
+        totals['Expense head'] = 'Total Monthly Payout'
+        
+        # Append the total row
+        df_monthly_sched = pd.concat([df_monthly_sched, pd.DataFrame([totals])], ignore_index=True)
+        
+        # Format columns with currency formatting
+        for col in months_names:
             df_monthly_sched[col] = df_monthly_sched[col].map(format_inr)
             
-        render_fit_table(df_monthly_sched)
+        # Custom AgGrid options with bold & gradient style for the total row
+        gb_sched = GridOptionsBuilder.from_dataframe(df_monthly_sched)
+        gb_sched.configure_default_column(
+            resizable=True,
+            sortable=False,
+            filterable=False,
+            wrapText=True,
+            autoHeight=True,
+            wrapHeaderText=True,
+            autoHeaderHeight=True,
+            minWidth=110,
+        )
+        
+        # CSS Gradient style: light blue and grey
+        js_total_row_style = JsCode("""
+        function(params) {
+            if (params.node.data['Expense head'] === 'Total Monthly Payout') {
+                return {
+                    'fontWeight': 'bold',
+                    'background': 'linear-gradient(90deg, #dbeafe 0%, #e2e8f0 100%)',
+                    'color': 'black'
+                };
+            }
+            return null;
+        }
+        """)
+        
+        # Apply style to all columns
+        for col in df_monthly_sched.columns:
+            gb_sched.configure_column(col, cellStyle=js_total_row_style)
+            
+        gb_sched.configure_grid_options(
+            domLayout="autoHeight",
+            autoSizeStrategy={"type": "fitGridWidth", "defaultMinWidth": 110},
+            suppressHorizontalScroll=True,
+        )
+        
+        AgGrid(
+            df_monthly_sched,
+            gridOptions=gb_sched.build(),
+            height=max(120, min(420, 48 + (len(df_monthly_sched) + 1) * 42)),
+            theme="alpine",
+            enable_enterprise_modules=False,
+            allow_unsafe_jscode=True,
+            reload_data=True,
+            custom_css={
+                ".ag-header-cell-label": {"white-space": "normal", "line-height": "1.2"},
+                ".ag-cell": {"line-height": "1.35", "display": "flex", "align-items": "center"},
+            },
+        )
     else:
         st.info("No itemized expense head disbursements found in the Cashflow logs for this partner institution.")
 
@@ -1593,7 +1889,7 @@ with tab4:
     st.markdown("### Search, Filter & Export Datasets")
     
     # Imports for conditional formatting
-    from st_aggrid import JsCode
+    # JsCode already imported at the top of the file
     
     # JsCode conditional cell stylings (Advanced conditional formatting)
     js_balance_style = JsCode("""
