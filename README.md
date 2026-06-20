@@ -36,4 +36,4 @@ An interactive, premium Streamlit dashboard for monitoring partner institution b
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-Testing Deployment
+Test deployment
