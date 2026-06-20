@@ -22,7 +22,11 @@ jobs:
 
           git clone https://user:${HF_TOKEN}@huggingface.co/spaces/bantykh/cashflow-dashboard hf_space
 
-          rsync -av --exclude ".git" --exclude ".github" ./ hf_space/
+          rsync -av \
+  --exclude ".git" \
+  --exclude ".github" \
+  --exclude "Partner Institution Cashflow_FY 2026-2027.xlsx" \
+  ./ hf_space/
 
           cd hf_space
 
