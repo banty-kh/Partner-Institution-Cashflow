@@ -1285,7 +1285,7 @@ with col5:
     """, unsafe_allow_html=True)
 
 # TABS FOR ORGANIZATION
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Executive View", "🏫 Institution Factsheet Explorer", "🎯 Monitoring & Evaluation", "📋 Raw Data & Exports"])
+tab1, tab2, tab3 = st.tabs(["📊 Executive View", "🏫 Institution Factsheet Explorer", "📋 Raw Data & Exports"])
 
 # ==================== TAB 1: EXECUTIVE VIEW ====================
 with tab1:
@@ -1833,103 +1833,8 @@ with tab2:
     else:
         st.info("No itemized expense head disbursements found in the Cashflow logs for this partner institution.")
 
-# ==================== TAB 3: MONITORING & EVALUATION (M&E) ====================
+# ==================== TAB 3: RAW DATA EXPLORER ====================
 with tab3:
-    st.markdown("### 🎯 Monitoring & Evaluation (M&E) SOPs & Guidelines")
-    st.markdown("Guiding questions, recording standards, and standard operating procedures for offline data verification and impact assessment.")
-    
-    # Custom HTML info box
-    st.markdown("""
-    <div style="background-color: #f0fdf4; border-left: 5px solid #16a34a; padding: 20px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-        <h5 style="color: #15803d; margin: 0 0 8px 0; font-weight: 700; font-size: 1.05rem;">📌 M&E Framework & SOP Purpose</h5>
-        <p style="color: #166534; margin: 0; font-size: 0.95rem; line-height: 1.5;">
-            Since offline student performance, attendance logs, and school audits are managed locally, this dashboard tab serves as the official M&E Standard Operating Procedure (SOP) manual. The guiding questions and guidelines below define how POCs should reconcile dashboard cashflow datasets with actual ground-level operations.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col_me_l, col_me_r = st.columns(2)
-    
-    with col_me_l:
-        st.markdown("#### ❓ Guiding Questions for Data Review")
-        
-        with st.expander("📊 1. Budget & Sponsorship/Institution Utilization (Amount Sheet)", expanded=True):
-            st.markdown("""
-            * **Fund Utilization Check:**
-              * *Is the institution budget being utilized exactly as sanctioned under the approved categories (Tuition, Hostel, Nutrition, Salary)?*
-              * *Are there any budget categories showing zero expenditures where students were originally mapped?*
-            * **Sponsorship Alignment:**
-              * *Does the number of students sponsored in each category match the active numbers in the Master Registry?*
-              * *Is the calculated cost per sponsored student matching the budget projections?*
-            """)
-            
-        with st.expander("📅 2. Monthly Disbursement & Logs (Cashflow Sheet)", expanded=True):
-            st.markdown("""
-            * **Payout Timeliness:**
-              * *Are the monthly disbursements released on time (referencing payout transaction dates vs planned timelines)?*
-              * *Are there delays in logging installment details (Dates / Reference numbers)?*
-            * **Cohort Validation:**
-              * *Do the monthly student counts logged in the Cashflow sheet match active enrolled students in the institution registers?*
-              * *What reasons are noted in the "Remark" columns for payment variances or delays?*
-            """)
-            
-        with st.expander("👥 3. Student Enrolment & Retention (Summa Sheet)", expanded=True):
-            st.markdown("""
-            * **Cohort Performance:**
-              * *What is the retention rate of the sponsored cohort (active vs dropped-out students)?*
-              * *What is the proportion of unique students supported in Base Schools vs. Non-Base Schools?*
-            * **Demographics Update:**
-              * *Are there student demographic changes that require updating the master record?*
-              * *Has the student size matched the physical capacity of the hostels and classrooms?*
-            """)
-            
-    with col_me_r:
-        st.markdown("#### 📋 Standard Operating Procedures (SOPs)")
-        
-        with st.expander("🛠️ SOP 1: Institution Verification & Cohort Tracking", expanded=True):
-            st.markdown("""
-            * **Objective:** Ensure student counts correspond to actual, attending beneficiaries.
-            * **Required Actions:**
-              * POCs must conduct monthly checks on student attendance sheets.
-              * Log dropout details (date, reason) and submit immediate updates to the master file.
-            * **Verification Standard:**
-              * Monthly Cashflow student counts must match the verified physical registers.
-            """)
-            
-        with st.expander("💼 SOP 2: Disbursement & Expense Audit", expanded=True):
-            st.markdown("""
-            * **Objective:** Ensure financial accountability and proper budget category use.
-            * **Required Actions:**
-              * Reconcile payout transaction dates and reference numbers with bank receipts.
-              * Audit sample expenditures to confirm salary support reached teachers, and nutrition funds reached meals.
-            * **Verification Standard:**
-              * Verify that no payments are released without complete receipt validation of previous payouts.
-            """)
-            
-        with st.expander("🔄 SOP 3: Monthly Log Reconciliation", expanded=True):
-            st.markdown("""
-            * **Objective:** Maintain dashboard sync integrity.
-            * **Required Actions:**
-              * Match dashboard figures with the physical cashbook of the partner institution.
-              * Log any discrepancy explanation in the "Remark" column in the Cashflow sheet.
-            * **Verification Standard:**
-              * Complete monthly sync audits within 10 days of the cycle end.
-            """)
-
-    st.markdown("---")
-    st.markdown("#### 📝 M&E Data Logging Template Guidelines")
-    
-    st.markdown("""
-    When logging offline information into the Excel / Google Sheets, ensure the following standards are met to preserve dashboard data integrity:
-    
-    1. **Installment Date Formatting:** Log transaction dates strictly in `DD-MM-YYYY` format (avoid text descriptions like 'pending' or 'released' in date columns).
-    2. **Disbursement Head Mapping:** Ensure expense heads in the Cashflow sheet match standardized naming (`Tuition fees`, `Hostel fees`, `Nutrition fees`, `Teacher's Salary`, `Founder Salary`).
-    3. **Remark Standards:** Always enter the specific cause for payment delays or student variance in the `Remark` field (e.g., *'Delayed school reopening'*, *'Cohort transfer to Base school'*).
-    4. **Student Counts:** Record actual active students attending for that month, rather than copy-pasting the approved cap.
-    """)
-
-# ==================== TAB 4: RAW DATA EXPLORER ====================
-with tab4:
     st.markdown("### Search, Filter & Export Datasets")
     
     # Imports for conditional formatting
