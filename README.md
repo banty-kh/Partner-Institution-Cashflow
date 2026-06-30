@@ -1,6 +1,6 @@
 # Partner Institution Cashflow & Sponsorship Dashboard
 
-An interactive, premium Streamlit dashboard for monitoring partner institution budget allocations, actual monthly disbursements, student sponsorships, and Monitoring & Evaluation (M&E) guidelines. Sourced dynamically from Google Sheets with offline backup support.
+An interactive, premium Streamlit dashboard for monitoring partner institution budget allocations, actual monthly disbursements, and student sponsorships. Sourced dynamically from Google Sheets with offline backup support.
 
 ## 🚀 Key Features
 
@@ -9,7 +9,6 @@ An interactive, premium Streamlit dashboard for monitoring partner institution b
 *   **Dynamic Pivot Builder:** Allows users to dynamically configure pivot rows, columns, metrics, and aggregation functions (sum, mean, count) to slice and dice datasets, accompanied by automatic data-labeled Plotly bar charts.
 *   **Institution Factsheet Explorer:** View individual institution details, payout cycles, and category-specific remaining balances.
 *   **Interactive Master Registry:** Built on `streamlit-aggrid` with column sorting, resizing, pagination, and advanced conditional formatting rules (highlighting high budgets in blue, high balances in red, and large cohorts in green).
-*   **Monitoring & Evaluation (M&E) SOPs:** Standardized guidelines, auditing questionnaires, and data logging templates to ensure offline audit records sync cleanly with the dashboard data structure.
 *   **Soft Pastel Gradient Theme:** Styled with custom CSS utilizing Outfit typography, glassmorphism filters, and a soft yellow-green-blue gradient.
 
 ## 📦 Project Structure
