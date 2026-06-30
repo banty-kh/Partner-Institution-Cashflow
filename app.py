@@ -298,6 +298,41 @@ def format_date_dmy(val):
         return date_part
 
 
+def safe_float(val):
+    if pd.isna(val) or str(val).strip() == '' or str(val).strip().lower() == 'nan':
+        return 0.0
+    try:
+        return float(str(val).replace(',', '').replace('₹', '').strip())
+    except:
+        return 0.0
+
+
+def get_month_name_from_date_str(date_str):
+    if pd.isna(date_str) or not isinstance(date_str, str) or date_str.strip() == '':
+        return None
+    date_str = date_str.strip()
+    import re
+    parts = re.split(r'[-/]', date_str)
+    if len(parts) >= 2:
+        try:
+            m_idx = int(parts[1])
+            months_map = {
+                1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June',
+                7: 'July', 8: 'August', 9: 'September', 10: 'October', 11: 'November', 12: 'December'
+            }
+            if m_idx in months_map:
+                return months_map[m_idx]
+        except ValueError:
+            pass
+    try:
+        dt = pd.to_datetime(date_str, errors='coerce')
+        if pd.notna(dt):
+            return dt.strftime('%B')
+    except:
+        pass
+    return None
+
+
 def render_fit_table(df, height=None):
     """Render compact read-only tables with wrapped, visible columns."""
     gb = GridOptionsBuilder.from_dataframe(df)
@@ -1376,11 +1411,20 @@ with tab1:
     st.plotly_chart(fig_state, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Monthly Cashflow Outflow Schedule Line Chart
-    months_cols = [f"Paid_{m}" for m in ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March']]
+    # Monthly Cashflow Outflow Schedule Line Chart (based on installment transaction payments)
     months_names = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March']
     
-    monthly_sums = df_filtered[months_cols].sum().values
+    installment_sums = {m: 0.0 for m in months_names}
+    for idx, row in df_filtered.iterrows():
+        for inst_num in range(1, 6):
+            date_val = row.get(f'Inst{inst_num}_Date')
+            amt_val = row.get(f'Inst{inst_num}_Amount')
+            if pd.notna(date_val) and str(date_val).strip() != '' and str(date_val).strip().lower() != 'nan':
+                month_name = get_month_name_from_date_str(str(date_val))
+                if month_name in installment_sums:
+                    installment_sums[month_name] += safe_float(amt_val)
+                    
+    monthly_sums = [installment_sums[m] for m in months_names]
     
     fig_monthly = go.Figure()
     fig_monthly.add_trace(go.Scatter(
