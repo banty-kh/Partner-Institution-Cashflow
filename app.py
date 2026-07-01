@@ -1845,7 +1845,7 @@ with tab3:
     function(params) {
         if (params.value > 500000) {
             return {
-                'color': '#991b1b',
+                'color': '#000000',
                 'backgroundColor': '#fee2e2',
                 'fontWeight': 'bold'
             };
@@ -1858,7 +1858,7 @@ with tab3:
     function(params) {
         if (params.value > 100) {
             return {
-                'color': '#15803d',
+                'color': '#000000',
                 'backgroundColor': '#dcfce7',
                 'fontWeight': 'bold'
             };
@@ -1871,14 +1871,23 @@ with tab3:
     function(params) {
         if (params.value > 1000000) {
             return {
-                'color': '#0369a1',
+                'color': '#000000',
                 'backgroundColor': '#e0f2fe',
                 'fontWeight': 'bold'
             };
         }
-        return null;
+        return {
+            'color': '#000000'
+        };
     }
     """)
+
+    raw_data_grid_css = {
+        ".ag-root-wrapper": {"color": "#000000"},
+        ".ag-header-cell": {"color": "#000000"},
+        ".ag-header-cell-text": {"color": "#000000"},
+        ".ag-cell": {"color": "#000000"},
+    }
 
     st.markdown("#### 🏫 Master Partner Institutions Registry")
     
@@ -1902,7 +1911,8 @@ with tab3:
         theme="alpine",
         enable_enterprise_modules=False,
         reload_data=True,
-        allow_unsafe_jscode=True
+        allow_unsafe_jscode=True,
+        custom_css=raw_data_grid_css
     )
     
     csv_master = df_filtered.to_csv(index=False).encode('utf-8')
@@ -1934,7 +1944,8 @@ with tab3:
         theme="alpine",
         enable_enterprise_modules=False,
         reload_data=True,
-        allow_unsafe_jscode=True
+        allow_unsafe_jscode=True,
+        custom_css=raw_data_grid_css
     )
     
     csv_cf = df_cf_filtered.to_csv(index=False).encode('utf-8')
